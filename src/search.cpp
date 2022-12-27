@@ -512,6 +512,41 @@ void Thread::search() {
 
 namespace {
 
+  void print_explain_stat(Position& pos, Depth depth, Value val) {
+      // We do not want to print for very deep analysis
+      // TODO: right now we compare to max depth which is hard-coded 
+      // external knowledge. Fix this clunkiness
+      if (depth < 10)
+          return;
+
+      // TODO: use non_pawn_material and pawn count to compute this more 
+      // efficiently
+
+      int w_pawn = pos.count<PAWN>(WHITE), b_pawn = pos.count<PAWN>(BLACK);
+      int w_knight = pos.count<KNIGHT>(WHITE), b_knight = pos.count<KNIGHT>(BLACK);
+      int w_bishop = pos.count<BISHOP>(WHITE), b_bishop = pos.count<BISHOP>(BLACK);
+      int w_rook = pos.count<ROOK>(WHITE), b_rook = pos.count<ROOK>(BLACK);
+      int w_queen = pos.count<QUEEN>(WHITE), b_queen = pos.count<QUEEN>(BLACK);
+      
+      // If the material difference is large enough, the human can report themselves
+      int w_mat = 10 * w_queen + 5 * w_rook + 3 * (w_knight + w_bishop) + w_pawn;
+      int b_mat = 10 * b_queen + 5 * b_rook + 3 * (b_knight + b_bishop) + b_pawn;
+      if (w_mat < b_mat + 2 && b_mat < w_mat + 2) {
+          return;
+      }
+
+      // If val is too close to a draw, then it isn't worth reporting
+      // TODO
+
+      // Print with some random probability
+      // TODO
+
+      std::cerr << val << " " << pos.fen() << "\n";
+
+      // std::cerr << w_pawn << " " << w_knight << " " << w_bishop << " " << w_rook << " " << w_queen << " "
+      //           << b_pawn << " " << b_knight << " " << b_bishop << " " << b_rook << " " << b_queen << "\n";
+  }
+
   // search<>() is the main search function for both PV and non-PV nodes
 
   template <NodeType nodeType>
@@ -529,13 +564,18 @@ namespace {
         && pos.has_game_cycle(ss->ply))
     {
         alpha = value_draw(pos.this_thread());
-        if (alpha >= beta)
+        if (alpha >= beta) {
+            print_explain_stat(pos, depth, alpha);
             return alpha;
+        }
     }
 
     // Dive into quiescence search when the depth reaches zero
-    if (depth <= 0)
-        return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
+    if (depth <= 0) {
+        Value val = qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
+        print_explain_stat(pos, depth, val);
+        return val;
+    }
 
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
@@ -578,9 +618,12 @@ namespace {
         // Step 2. Check for aborted search and immediate draw
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
-            || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos)
+            || ss->ply >= MAX_PLY) {
+            Value val = (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos)
                                                         : value_draw(pos.this_thread());
+            print_explain_stat(pos, depth, val);
+            return val;
+        }
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply+1), but if alpha is already bigger because
@@ -590,8 +633,10 @@ namespace {
         // mate. In this case return a fail-high score.
         alpha = std::max(mated_in(ss->ply), alpha);
         beta = std::min(mate_in(ss->ply+1), beta);
-        if (alpha >= beta)
+        if (alpha >= beta) {
+            print_explain_stat(pos, depth, alpha);
             return alpha;
+        }
     }
     else
         thisThread->rootDelta = beta - alpha;
@@ -657,8 +702,10 @@ namespace {
 
         // Partial workaround for the graph history interaction problem
         // For high rule50 counts don't produce transposition table cutoffs.
-        if (pos.rule50_count() < 90)
+        if (pos.rule50_count() < 90) {
+            print_explain_stat(pos, depth, ttValue);
             return ttValue;
+        }
     }
 
     // Step 5. Tablebases probe
@@ -699,6 +746,7 @@ namespace {
                               std::min(MAX_PLY - 1, depth + 6),
                               MOVE_NONE, VALUE_NONE);
 
+                    print_explain_stat(pos, depth, value);
                     return value;
                 }
 
@@ -772,8 +820,10 @@ namespace {
     if (eval < alpha - 369 - 254 * depth * depth)
     {
         value = qsearch<NonPV>(pos, ss, alpha - 1, alpha);
-        if (value < alpha)
+        if (value < alpha) {
+            print_explain_stat(pos, depth, value);
             return value;
+        }
     }
 
     // Step 8. Futility pruning: child node (~40 Elo).
@@ -782,8 +832,11 @@ namespace {
         &&  depth < 8
         &&  eval - futility_margin(depth, improving) - (ss-1)->statScore / 303 >= beta
         &&  eval >= beta
-        &&  eval < 28031) // larger than VALUE_KNOWN_WIN, but smaller than TB wins
+        &&  eval < 28031) // larger than VALUE_KNOWN_WIN, but smaller than TB wins 
+        {
+        print_explain_stat(pos, depth, eval);
         return eval;
+    }
 
     // Step 9. Null move search with verification search (~35 Elo)
     if (   !PvNode
@@ -816,8 +869,10 @@ namespace {
             if (nullValue >= VALUE_TB_WIN_IN_MAX_PLY)
                 nullValue = beta;
 
-            if (thisThread->nmpMinPly || (abs(beta) < VALUE_KNOWN_WIN && depth < 14))
+            if (thisThread->nmpMinPly || (abs(beta) < VALUE_KNOWN_WIN && depth < 14)) {
+                print_explain_stat(pos, depth, nullValue);
                 return nullValue;
+            }
 
             assert(!thisThread->nmpMinPly); // Recursive verification is not allowed
 
@@ -830,8 +885,10 @@ namespace {
 
             thisThread->nmpMinPly = 0;
 
-            if (v >= beta)
+            if (v >= beta) {
+                print_explain_stat(pos, depth, nullValue);
                 return nullValue;
+            }
         }
     }
 
@@ -882,6 +939,7 @@ namespace {
                 {
                     // Save ProbCut data into transposition table
                     tte->save(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER, depth - 3, move, ss->staticEval);
+                    print_explain_stat(pos, depth, value);
                     return value;
                 }
             }
@@ -893,8 +951,11 @@ namespace {
         && !ttMove)
         depth -= 3;
 
-    if (depth <= 0)
-        return qsearch<PV>(pos, ss, alpha, beta);
+    if (depth <= 0) {
+        Value val = qsearch<PV>(pos, ss, alpha, beta);
+        print_explain_stat(pos, depth, val);
+        return val;
+    }
 
     if (    cutNode
         &&  depth >= 9
@@ -914,8 +975,10 @@ moves_loop: // When in check, search starts here
         && ttValue >= probCutBeta
         && abs(ttValue) <= VALUE_KNOWN_WIN
         && abs(beta) <= VALUE_KNOWN_WIN
-       )
+       ) {
+        print_explain_stat(pos, depth, probCutBeta);
         return probCutBeta;
+    }
 
 
     const PieceToHistory* contHist[] = { (ss-1)->continuationHistory, (ss-2)->continuationHistory,
@@ -1077,8 +1140,10 @@ moves_loop: // When in check, search starts here
               // search without the ttMove. So we assume this expected Cut-node is not singular,
               // that multiple moves fail high, and we can prune the whole subtree by returning
               // a soft bound.
-              else if (singularBeta >= beta)
+              else if (singularBeta >= beta) {
+                  print_explain_stat(pos, depth, singularBeta);
                   return singularBeta;
+              }
 
               // If the eval of ttMove is greater than beta, we reduce it (negative extension)
               else if (ttValue >= beta)
@@ -1236,8 +1301,10 @@ moves_loop: // When in check, search starts here
       // Finished searching the move. If a stop occurred, the return value of
       // the search cannot be trusted, and we return immediately without
       // updating best move, PV and TT.
-      if (Threads.stop.load(std::memory_order_relaxed))
+      if (Threads.stop.load(std::memory_order_relaxed)) {
+          print_explain_stat(pos, depth, VALUE_ZERO);
           return VALUE_ZERO;
+      }
 
       if (rootNode)
       {
@@ -1383,6 +1450,7 @@ moves_loop: // When in check, search starts here
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
+    print_explain_stat(pos, depth, bestValue);
     return bestValue;
   }
 
