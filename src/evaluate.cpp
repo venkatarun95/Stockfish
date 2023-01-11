@@ -1104,8 +1104,8 @@ Value Eval::evaluate(const Position& pos, int* complexity) {
 
 std::string Eval::trace(Position& pos) {
 
-  if (pos.checkers())
-      return "Final evaluation: none (in check)";
+  // if (pos.checkers())
+  //     return "Final evaluation: none (in check)";
 
   std::stringstream ss;
   ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
