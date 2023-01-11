@@ -514,12 +514,12 @@ namespace {
 
   void print_explain_stat(Position& pos, Depth depth, Value val) {
       // We do not want to print for very deep analysis
-      // TODO: right now we compare to max depth which is hard-coded 
+      // TODO: right now we compare to max depth which is hard-coded
       // external knowledge. Fix this clunkiness
-      if (depth < 10)
+      if (depth < 15)
           return;
 
-      // TODO: use non_pawn_material and pawn count to compute this more 
+      // TODO: use non_pawn_material and pawn count to compute this more
       // efficiently
 
       int w_pawn = pos.count<PAWN>(WHITE), b_pawn = pos.count<PAWN>(BLACK);
@@ -527,7 +527,7 @@ namespace {
       int w_bishop = pos.count<BISHOP>(WHITE), b_bishop = pos.count<BISHOP>(BLACK);
       int w_rook = pos.count<ROOK>(WHITE), b_rook = pos.count<ROOK>(BLACK);
       int w_queen = pos.count<QUEEN>(WHITE), b_queen = pos.count<QUEEN>(BLACK);
-      
+
       // If the material difference is large enough, the human can report themselves
       int w_mat = 10 * w_queen + 5 * w_rook + 3 * (w_knight + w_bishop) + w_pawn;
       int b_mat = 10 * b_queen + 5 * b_rook + 3 * (b_knight + b_bishop) + b_pawn;
@@ -541,7 +541,7 @@ namespace {
       // Print with some random probability
       // TODO
 
-      std::cerr << val << " " << pos.fen() << "\n";
+      std::cerr << UCI::value(val) << " " << pos.fen() << "\n";
 
       // std::cerr << w_pawn << " " << w_knight << " " << w_bishop << " " << w_rook << " " << w_queen << " "
       //           << b_pawn << " " << b_knight << " " << b_bishop << " " << b_rook << " " << b_queen << "\n";
@@ -832,7 +832,7 @@ namespace {
         &&  depth < 8
         &&  eval - futility_margin(depth, improving) - (ss-1)->statScore / 303 >= beta
         &&  eval >= beta
-        &&  eval < 28031) // larger than VALUE_KNOWN_WIN, but smaller than TB wins 
+        &&  eval < 28031) // larger than VALUE_KNOWN_WIN, but smaller than TB wins
         {
         print_explain_stat(pos, depth, eval);
         return eval;
